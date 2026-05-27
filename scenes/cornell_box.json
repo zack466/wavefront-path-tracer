@@ -1,0 +1,45 @@
+{
+  "camera": {
+    "position": [0.0, 2.0, 5.5],
+    "look_at":  [0.0, 2.0, 0.0],
+    "up":       [0.0, 1.0, 0.0],
+    "vfov_deg": 38.0
+  },
+  "render": {
+    "width":         720,
+    "height":        720,
+    "spp":           2048,
+    "max_depth":     10,
+    "rr_min_depth":  3,
+    "firefly_clamp": 30.0,
+    "background":    [0.0, 0.0, 0.0],
+    "output":        "cornell.png",
+    "tonemapping":   "aces",
+    "denoise": {
+      "enabled":       true,
+      "sigma_r":       0.06,
+      "atrous_passes": 3
+    }
+  },
+  "materials": [
+    { "type": "diffuse",          "albedo": [0.73, 0.73, 0.73] },
+    { "type": "diffuse",          "albedo": [0.65, 0.05, 0.05] },
+    { "type": "diffuse",          "albedo": [0.12, 0.45, 0.15] },
+    { "type": "emissive",         "albedo": [0.00, 0.00, 0.00], "emission": [17.0, 12.0, 4.0] },
+    { "type": "specular_ideal",   "albedo": [0.96, 0.96, 0.96] },
+    { "type": "rough_dielectric", "albedo": [1.00, 1.00, 1.00], "ior": 1.52, "roughness": 0.0 }
+  ],
+  "shapes": [
+    { "type": "plane",  "center": [ 0.0, 0.0, -2.0], "normal": [ 0, 1, 0], "material": 0 },
+    { "type": "plane",  "center": [ 0.0, 4.0, -2.0], "normal": [ 0,-1, 0], "material": 0 },
+    { "type": "plane",  "center": [ 0.0, 2.0, -4.0], "normal": [ 0, 0, 1], "material": 0 },
+    { "type": "plane",  "center": [-2.0, 2.0, -2.0], "normal": [ 1, 0, 0], "material": 2 },
+    { "type": "plane",  "center": [ 2.0, 2.0, -2.0], "normal": [-1, 0, 0], "material": 1 },
+    { "type": "disk",   "center": [ 0.0, 3.98,-2.0], "normal": [ 0,-1, 0], "radius": 0.9, "material": 3 },
+    { "type": "sphere", "center": [-0.9, 0.8, -2.5], "radius": 0.8, "material": 4 },
+    { "type": "sphere", "center": [ 0.9, 0.8, -2.5], "radius": 0.8, "material": 5 }
+  ],
+  "lights": [
+    { "type": "area", "shape_id": 5 }
+  ]
+}

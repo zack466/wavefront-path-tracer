@@ -1,0 +1,43 @@
+{
+  "camera": {
+    "position": [0.0, 2.0, 5.5],
+    "look_at":  [0.0, 2.0, 0.0],
+    "up":       [0.0, 1.0, 0.0],
+    "vfov_deg": 38.0
+  },
+  "render": {
+    "width":         1280,
+    "height":        1280,
+    "spp":           2048,
+    "max_depth":     10,
+    "rr_min_depth":  3,
+    "firefly_clamp": 30.0,
+    "background":    [0.0, 0.0, 0.0],
+    "output":        "cube_cornell.png",
+    "tonemapping":   "aces",
+    "denoise": {
+      "enabled":       true,
+      "sigma_r":       0.06,
+      "atrous_passes": 3
+    }
+  },
+  "materials": [
+    { "type": "diffuse",  "albedo": [0.73, 0.73, 0.73] },
+    { "type": "diffuse",  "albedo": [0.65, 0.05, 0.05] },
+    { "type": "diffuse",  "albedo": [0.12, 0.45, 0.15] },
+    { "type": "emissive", "albedo": [0.00, 0.00, 0.00], "emission": [17.0, 12.0, 4.0] }
+  ],
+  "shapes": [
+    { "type": "plane",  "center": [ 0.0, 0.0, -2.0], "normal": [ 0, 1, 0], "material": 0 },
+    { "type": "plane",  "center": [ 0.0, 4.0, -2.0], "normal": [ 0,-1, 0], "material": 0 },
+    { "type": "plane",  "center": [ 0.0, 2.0, -4.0], "normal": [ 0, 0, 1], "material": 0 },
+    { "type": "plane",  "center": [-2.0, 2.0, -2.0], "normal": [ 1, 0, 0], "material": 2 },
+    { "type": "plane",  "center": [ 2.0, 2.0, -2.0], "normal": [-1, 0, 0], "material": 1 },
+    { "type": "disk",   "center": [ 0.0, 3.98,-2.0], "normal": [ 0,-1, 0], "radius": 0.9, "material": 3 },
+    { "type": "cube",   "center": [-0.6, 1.1, -2.8], "half_extents": [0.55, 1.1,  0.55], "material": 0 },
+    { "type": "cube",   "center": [ 0.7, 0.55,-1.8], "half_extents": [0.55, 0.55, 0.55], "material": 0 }
+  ],
+  "lights": [
+    { "type": "area", "shape_id": 5 }
+  ]
+}

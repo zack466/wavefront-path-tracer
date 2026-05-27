@@ -1,0 +1,71 @@
+{
+  "camera": {
+    "position": [-1.0, 4.5,  9.5],
+    "look_at":  [ 0.5, 1.0,  0.0],
+    "up":        [0.0, 1.0,  0.0],
+    "vfov_deg": 52.0
+  },
+  "render": {
+    "width":         1920,
+    "height":        1080,
+    "spp":           2048,
+    "max_depth":     20,
+    "rr_min_depth":  3,
+    "firefly_clamp": 20.0,
+    "background":    [0.10, 0.10, 0.14],
+    "output":        "showcase.png",
+    "tonemapping":   "aces",
+    "denoise": {
+      "enabled":       true,
+      "sigma_r":       0.08,
+      "atrous_passes": 3
+    }
+  },
+  "materials": [
+    { "type": "diffuse",          "albedo": [0.22, 0.20, 0.18] },
+    { "type": "specular_ideal",   "albedo": [0.97, 0.87, 0.46] },
+    { "type": "diffuse",          "albedo": [0.75, 0.28, 0.12] },
+    { "type": "diffuse",          "albedo": [0.12, 0.40, 0.62] },
+    { "type": "diffuse",          "albedo": [0.88, 0.38, 0.04] },
+    { "type": "emissive",         "albedo": [0.0,  0.0,  0.0],  "emission": [28.0, 24.0, 16.0] },
+    { "type": "emissive",         "albedo": [0.0,  0.0,  0.0],  "emission": [ 5.0,  6.0, 11.0] }
+  ],
+  "shapes": [
+    { "type": "sphere", "center": [0, -100, 0], "radius": 100.0, "material": 0 },
+
+    { "type": "mesh",
+      "file":      "../models/cow-nonormals.obj",
+      "material":  2,
+      "scale":     0.52,
+      "rotate_y": -90,
+      "translate": [-5.5, 1.90, 0.0] },
+
+    { "type": "mesh",
+      "file":      "../models/teapot.obj",
+      "material":  1,
+      "scale":     0.85,
+      "rotate_y":  22,
+      "translate": [-1.5, 0.0, 0.0] },
+
+    { "type": "mesh",
+      "file":      "../models/pumpkin_tall_10k.obj",
+      "material":  4,
+      "scale":     0.034,
+      "rotate_y":  25,
+      "translate": [3.90, 1.28, 3.74] },
+
+    { "type": "mesh",
+      "file":      "../models/teddy.obj",
+      "material":  3,
+      "scale":     0.107,
+      "rotate_y": -22,
+      "translate": [5.8, 2.22, 0.0] },
+
+    { "type": "sphere", "center": [-12.0, 18.0, 12.0], "radius": 3.5, "material": 5 },
+    { "type": "sphere", "center": [ 14.0, 10.0,  8.0], "radius": 2.5, "material": 6 }
+  ],
+  "lights": [
+    { "type": "area", "shape_id": 5 },
+    { "type": "area", "shape_id": 6 }
+  ]
+}

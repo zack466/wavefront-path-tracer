@@ -1,0 +1,6 @@
+-std=c++17
+--cuda-path=/usr/local/cuda
+--cuda-gpu-arch=sm_75
+-L/usr/local/cuda/lib64
+-lcudart
+-I/usr/local/cuda/include

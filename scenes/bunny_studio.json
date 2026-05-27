@@ -1,0 +1,50 @@
+{
+  "camera": {
+    "position": [0.0, 2.5, 6.0],
+    "look_at":  [0.0, 1.2, 0.0],
+    "up":       [0.0, 1.0, 0.0],
+    "vfov_deg": 36.0
+  },
+  "render": {
+    "width":         1280,
+    "height":        720,
+    "spp":           1024,
+    "max_depth":     20,
+    "rr_min_depth":  3,
+    "firefly_clamp": 20.0,
+    "background":    [0.04, 0.04, 0.06],
+    "output":        "bunny_studio.png",
+    "tonemapping":   "aces",
+    "denoise": {
+      "enabled":       true,
+      "sigma_r":       0.06,
+      "atrous_passes": 3
+    }
+  },
+  "materials": [
+    { "type": "diffuse",          "albedo": [0.70, 0.62, 0.48] },
+    { "type": "rough_dielectric", "albedo": [0.97, 0.97, 0.95], "ior": 1.46, "roughness": 0.10 },
+    { "type": "emissive",         "albedo": [0.0, 0.0, 0.0], "emission": [14.0, 11.0,  6.0] },
+    { "type": "emissive",         "albedo": [0.0, 0.0, 0.0], "emission": [ 4.0,  7.0, 16.0] },
+    { "type": "emissive",         "albedo": [0.0, 0.0, 0.0], "emission": [10.0, 11.0, 14.0] }
+  ],
+  "shapes": [
+    { "type": "plane",  "center": [0.0,   0.0, 0.0], "normal": [0, 1, 0], "material": 0 },
+    {
+      "type":      "mesh",
+      "file":      "../models/bunny.obj",
+      "material":  1,
+      "translate": [0.22, -0.03, -0.11],
+      "scale":     1.5,
+      "rotate_y":  20.0
+    },
+    { "type": "sphere", "center": [ 5.0, 6.0,  5.0], "radius": 1.5, "material": 2 },
+    { "type": "sphere", "center": [-5.0, 5.0,  3.0], "radius": 1.0, "material": 3 },
+    { "type": "sphere", "center": [-1.0, 4.0, -6.0], "radius": 0.8, "material": 4 }
+  ],
+  "lights": [
+    { "type": "area", "shape_id": 1 },
+    { "type": "area", "shape_id": 2 },
+    { "type": "area", "shape_id": 3 }
+  ]
+}
