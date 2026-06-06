@@ -6,8 +6,8 @@
     "vfov_deg": 38.0
   },
   "render": {
-    "width":         1280,
-    "height":        1280,
+    "width":         720,
+    "height":        720,
     "spp":           2048,
     "max_depth":     10,
     "rr_min_depth":  3,

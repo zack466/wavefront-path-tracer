@@ -308,39 +308,46 @@ python benchmark.py [--gpu-only] [--cpu-only] [--scenes a,b,c] [--gpu-res WxH] [
 Mrays/s = W×H×spp/time — resolution- and spp-independent throughput, directly comparable across all renderers.
 
 **CPU measurements** — Intel Xeon E5-2640 v3 (8 cores / 16 threads, 2.6 GHz), **1280×720, spp=128**.  
-**GPU measurements** — RTX A5000 (sm_86, 256 SMs, 24 GB VRAM, 768 GB/s), **3840×2160, native scene spp** (1024 or 2048†).
+**GPU measurements** — RTX A5000 (sm_86, 84 SMs, 24 GB VRAM, 768 GB/s), **3840×2160, native scene spp** (1024 or 2048†).
+
+GPU results below reflect the post-optimisation kernels: MissQueue eliminated
+(background written directly from `intersect_kernel` / `__miss__primary`),
+slimmer HitQueue (`t` and `shape_id` dropped), and `__launch_bounds__(128,6)`
+on both intersect and shade.  Cumulative gain over the previous baseline is
+~+6–14 % on CUDA BVH and ~+5–13 % on OptiX (largest on small/medium scenes
+where the old miss kernel was a larger fraction of frame time).
 
 ### 13.1 Four-Renderer Comparison (Mrays/s)
 
 | Scene | Mesh | CPU Recursive | CPU Wavefront | GPU CUDA BVH | GPU OptiX | CUDA/WF | OptiX/CUDA |
 |---|---|---|---|---|---|---|---|
-| spheres | 0 tris | 10.3 | 2.4 | 716 | 460 | **298×** | 0.64× |
-| cornell\_box† | 0 tris | 2.8 | 1.4 | 197 | 138 | **141×** | 0.70× |
-| materials | 0 tris | 14.5 | 2.6 | 813 | 586 | **313×** | 0.72× |
-| mesh\_test | 12 tris | 12.3 | 2.3 | 685 | 434 | **298×** | 0.63× |
-| bunny\_studio | 144K tris | 2.9 | 1.2 | 139 | 422 | **116×** | **3.0×** |
-| dragon\_glass† | 871K tris | 1.4 | 0.7 | 61 | 256 | **87×** | **4.2×** |
-| bunny\_diffuse ★ | 144K tris | 4.9 | 2.0 | 205 | 548 | **103×** | **2.7×** |
-| dragon\_diffuse ★ | 871K tris | 3.2 | 1.4 | 131 | 445 | **94×** | **3.4×** |
+| spheres | 0 tris | 10.3 | 2.4 | 833 | 521 | **347×** | 0.63× |
+| cornell\_box† | 0 tris | 2.8 | 1.4 | 200 | 138 | **143×** | 0.69× |
+| materials | 0 tris | 14.5 | 2.6 | 966 | 670 | **371×** | 0.69× |
+| mesh\_test | 12 tris | 12.3 | 2.3 | 795 | 480 | **346×** | 0.60× |
+| bunny\_studio | 144K tris | 2.9 | 1.2 | 149 | 463 | **124×** | **3.1×** |
+| dragon\_glass† | 871K tris | 1.4 | 0.7 | 64 | 274 | **92×** | **4.3×** |
+| bunny\_diffuse ★ | 144K tris | 4.9 | 2.0 | 224 | 603 | **112×** | **2.7×** |
+| dragon\_diffuse ★ | 871K tris | 3.2 | 1.4 | 141 | 479 | **101×** | **3.4×** |
 
 † spp=2048 for GPU; CPU uses spp=128. ★ Diffuse-only variants — maximise shadow ray count.
 
 ### 13.2 GPU CUDA vs CPU Wavefront — raw hardware speedup
 
-The **CUDA/WF** column isolates the GPU hardware benefit: both renderers run the identical wavefront algorithm (generate → BVH intersect → miss → shade + inline NEE shadow), differing only in execution platform.
+The **CUDA/WF** column isolates the GPU hardware benefit: both renderers run the identical wavefront algorithm (generate → BVH intersect → shade with NEE shadow), differing only in execution platform.
 
-**Analytic-only scenes (0–12 triangles): 141–313× speedup.**
-The A5000 has 256 SMs with 128 CUDA cores each vs 8 CPU cores — 4096× more hardware threads, though SIMD and memory-bandwidth effects dominate. The CPU wavefront also pays queue-compaction and SoA overhead that the recursive renderer avoids; on GPU, warp-ballot compaction is a handful of instructions and costs essentially nothing.
+**Analytic-only scenes (0–12 triangles): 143–371× speedup.**
+The A5000 has 84 SMs with 128 CUDA cores each vs 8 CPU cores — ~1300× more hardware threads, though SIMD and memory-bandwidth effects dominate.  The CPU wavefront also pays queue-compaction and SoA overhead that the recursive renderer avoids; on GPU, warp-ballot compaction is a handful of instructions and costs essentially nothing.
 
-**Large mesh scenes (144K–871K triangles): 87–116× speedup.**
+**Large mesh scenes (144K–871K triangles): 92–124× speedup.**
 Both renderers traverse the same software BVH in the same code paths. The difference is memory bandwidth: GPU has 768 GB/s vs CPU's ~40 GB/s (19×). For the 871K-triangle dragon the BVH node array (~35 MB) approaches the A5000's 40 MB L2 cache but DRAM refills still dominate the CPU — whose 20 MB L3 is overrun entirely — reducing the speedup compared to analytic scenes.
 
 ### 13.3 GPU OptiX vs GPU CUDA BVH — RT-core benefit
 
-**Analytic-only scenes: CUDA software BVH is ~1.4–1.6× faster than OptiX.**
+**Analytic-only scenes: CUDA software BVH is ~1.4–1.7× faster than OptiX.**
 Analytic shapes are tessellated before AS build (sphere → 112 triangles, cylinder → 32, disk → 16). The resulting tessellated GAS is a deeper hierarchy than the software BVH over a handful of raw primitives, adding traversal overhead per bounce.
 
-**Large mesh scenes: OptiX is 2.7–4.2× faster than CUDA software BVH.**
+**Large mesh scenes: OptiX is 2.7–4.3× faster than CUDA software BVH.**
 `gpu_bvh_intersect` loads BVH nodes from VRAM every traversal step. For 871K-triangle scenes the node array thrashes DRAM even on the GPU. OptiX RT cores traverse in fixed-function hardware with dedicated on-chip storage, bypassing this bottleneck. Shadow rays at every diffuse bounce amplify the gap.
 
 ### 13.4 CPU Recursive vs CPU Wavefront

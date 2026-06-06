@@ -16,13 +16,10 @@
   #include <omp.h>
 #endif
 
-// ── Ray sort key ──────────────────────────────────────────────────────────────
+// ── Ray sort key (matches GPU compute_ray_keys_kernel) ────────────────────────
 // Produces a 32-bit key: 3-bit direction octant (MSBs) + 29-bit origin Morton
 // code.  Rays with identical octant traverse the BVH in the same child-ordering;
 // nearby origins tend to visit the same leaf nodes → better cache locality.
-//
-// GPU equivalent: a compute_ray_keys_kernel fills a key array in device memory,
-// then cub::DeviceRadixSort::SortPairs() sorts ray indices by key in O(n) time.
 
 // Build a sorted index array for the ray queue.
 //
@@ -107,12 +104,6 @@ static void accumulate(ImageBuffer& img, int pixel_idx, int width,
 //
 // Thread 0's data is already at [0, t_count[0]) — no move needed.
 // Sequential, O(N) total data touched, fast (memmove is bandwidth-bound).
-//
-// GPU equivalent: warp-ballot compaction — each thread evaluates its predicate,
-// then __ballot_sync() counts the hits in its warp.  One atomicAdd per warp
-// reserves a contiguous output slot, and threads scatter their results there.
-// This is essentially free (no extra passes over data) and is the primary source
-// of GPU throughput advantage over this CPU implementation.
 
 static void compact_field(void* arr, size_t esz,
                           const int* t_count, int chunk, int nt)
@@ -134,9 +125,6 @@ static void compact_field(void* arr, size_t esz,
 // ── Kernel: GenerateRays ──────────────────────────────────────────────────────
 // Fills `out` with one primary camera ray per pixel for sample index `s`.
 // Slot index = flat pixel index — no shared counter needed.
-//
-// GPU equivalent: __global__ void generate_kernel(DeviceScene, int s, RayQueue*)
-// launched as <<<(W*H+255)/256, 256>>> — one thread per pixel, fully independent.
 
 static void kernel_generate(const SceneData& scene, const CameraFrame& cam,
                              int s, int sqrt_spp, bool stratified,
@@ -203,12 +191,6 @@ static void kernel_generate(const SceneData& scene, const CameraFrame& cam,
 //   hits  [t*chunk .. t*chunk + t_nhits[t])
 //   misses[t*chunk .. t*chunk + t_nmisses[t])
 // No atomics needed.  After the parallel phase, compact() merges segments.
-//
-// GPU equivalent: __global__ void intersect_kernel(RayQueue, DeviceScene, HitQueue*, MissQueue*)
-// Each thread processes one ray.  BVH traversal uses either the CUDA software
-// BVH (iterative stack-based traversal in device memory) or OptiX RT cores via
-// optixTrace().  Warp-ballot compaction (see compact_field note above) writes hits
-// and misses to contiguous device-memory queues without sequential passes.
 
 // sorted_idx: when non-null, thread i processes ray sorted_idx[i].
 // Sorted rays traverse similar BVH paths, improving cache locality for
@@ -257,9 +239,7 @@ static void kernel_intersect(const RayQueue& rays, const SceneData& scene,
             hits.geo_nx[j]       = hit.geo_normal.x;
             hits.geo_ny[j]       = hit.geo_normal.y;
             hits.geo_nz[j]       = hit.geo_normal.z;
-            hits.t[j]            = hit.t;
             hits.material_id[j]  = hit.material_id;
-            hits.shape_id[j]     = hit.shape_id;
             hits.front_face[j]   = hit.front_face ? 1 : 0;
             hits.wo_x[j]         = -rays.dir_x[ri];
             hits.wo_y[j]         = -rays.dir_y[ri];
@@ -301,7 +281,6 @@ static void kernel_intersect(const RayQueue& rays, const SceneData& scene,
     compact_field(hits.geo_nx,        sizeof(float), nh, chunk, nt);
     compact_field(hits.geo_ny,        sizeof(float), nh, chunk, nt);
     compact_field(hits.geo_nz,        sizeof(float), nh, chunk, nt);
-    compact_field(hits.t,             sizeof(float), nh, chunk, nt);
     compact_field(hits.wo_x,          sizeof(float), nh, chunk, nt);
     compact_field(hits.wo_y,          sizeof(float), nh, chunk, nt);
     compact_field(hits.wo_z,          sizeof(float), nh, chunk, nt);
@@ -312,7 +291,6 @@ static void kernel_intersect(const RayQueue& rays, const SceneData& scene,
     compact_field(hits.radiance_g,    sizeof(float), nh, chunk, nt);
     compact_field(hits.radiance_b,    sizeof(float), nh, chunk, nt);
     compact_field(hits.material_id,   sizeof(int),   nh, chunk, nt);
-    compact_field(hits.shape_id,      sizeof(int),   nh, chunk, nt);
     compact_field(hits.front_face,    sizeof(int),   nh, chunk, nt);
     compact_field(hits.pixel_idx,     sizeof(int),   nh, chunk, nt);
     compact_field(hits.depth,         sizeof(int),   nh, chunk, nt);
@@ -341,9 +319,6 @@ static void kernel_intersect(const RayQueue& rays, const SceneData& scene,
 // ── Kernel: Miss ──────────────────────────────────────────────────────────────
 // Each miss ray has a unique pixel_idx within one sample iteration — no
 // shared writes, no atomics needed.
-//
-// GPU equivalent: __global__ void miss_kernel(MissQueue, DeviceScene, float* frame_buffer)
-// img.add() becomes two atomicAdd calls into the device frame buffer (one per channel).
 
 static void kernel_miss(const MissQueue& misses, const SceneData& scene,
                         ImageBuffer& img)
@@ -368,11 +343,6 @@ static void kernel_miss(const MissQueue& misses, const SceneData& scene,
 // Termination writes: img.add() → unique pixel per ray per sample → no atomics.
 // Continuation writes: thread t owns nxt[t*chunk .. t*chunk+t_nnxt[t]) → no atomics.
 // After the parallel phase, nxt is compacted.
-//
-// GPU equivalent: __global__ void shade_kernel(HitQueue, DeviceScene, RayQueue* nxt, float* fb)
-// Direct lighting (NEE) shadow rays are either tested inline via gpu_shadow_blocked()
-// (CUDA software BVH path) or written to a ShadowQueue for a second GPU kernel
-// launch (OptiX path).  Warp-ballot compaction fills nxt without sequential passes.
 
 static void kernel_shade(HitQueue& hits, const SceneData& scene,
                          RayQueue& nxt, ImageBuffer& img)
@@ -401,9 +371,7 @@ static void kernel_shade(HitQueue& hits, const SceneData& scene,
         hit.point      = { hits.point_x[i],  hits.point_y[i],  hits.point_z[i]  };
         hit.normal     = { hits.normal_x[i], hits.normal_y[i], hits.normal_z[i] };
         hit.geo_normal = { hits.geo_nx[i],   hits.geo_ny[i],   hits.geo_nz[i]   };
-        hit.t          = hits.t[i];
         hit.material_id = hits.material_id[i];
-        hit.shape_id   = hits.shape_id[i];
         hit.front_face = (hits.front_face[i] != 0);
 
         Vec3 throughput = { hits.throughput_r[i], hits.throughput_g[i], hits.throughput_b[i] };
@@ -521,9 +489,6 @@ void render_wavefront_cpu(const SceneData& scene, ImageBuffer& img)
     for (int s = 0; s < cfg.spp; ++s) {
         kernel_generate(scene, cam, s, sqrt_spp, stratified, cur);
 
-        // GPU: each kernel_*() call below maps to a GPU kernel launch.
-        // The while-loop runs on the host, checking cur.count via a small
-        // cudaMemcpy each iteration to determine whether any rays remain active.
         while (cur.count > 0) {
             const std::vector<int>* idx_ptr = nullptr;
             if (do_sort) {

@@ -43,8 +43,8 @@ inline Vec3 sample_direct_lighting(const HitRecord& hit,
         float n_sign = dot(wi, hit.geo_normal) >= 0.f ? 1.f : -1.f;
         Vec3  origin = hit.point + (n_sign * 4e-4f) * hit.geo_normal;
         Ray   shadow = { origin, wi, PT_EPSILON, tmax };
-        // Any-hit shadow traversal: exits at the first occluder without
-        // loading normals (GPU equivalent: any-hit shader / gpu_shadow_blocked).
+        // Use the any-hit shadow traversal: exits at the first occluder without
+        // loading normals — mirrors gpu_shadow_blocked on the GPU path.
         int blocker_sid = -1;
         bool blocked = bvh_shadow_blocked(shadow, scene.accel, scene, &blocker_sid);
         return !blocked || (light_sid >= 0 && blocker_sid == light_sid);

@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::fprintf(stderr,
             "Usage: %s <scene.json> [options]\n"
-            "  --wavefront        Use queue-based wavefront renderer\n"
+            "  --wavefront        Use queue-based wavefront renderer (Phase 2)\n"
             "  --width  W         Override scene resolution width\n"
             "  --height H         Override scene resolution height\n"
             "  --spp    N         Override samples-per-pixel\n",
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
                 cfg.width, cfg.height, cfg.spp, cfg.max_depth);
     std::printf("Shapes:   %zu  Materials: %zu  Lights: %zu\n",
                 scene.shapes.size(), scene.materials.size(), scene.lights.size());
-    std::printf("Renderer: %s\n", use_wavefront ? "wavefront" : "recursive");
+    std::printf("Renderer: %s\n", use_wavefront ? "wavefront (Phase 2)" : "recursive (Phase 1)");
 
     ImageBuffer img(cfg.width, cfg.height);
 

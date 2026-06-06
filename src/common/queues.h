@@ -2,8 +2,7 @@
 #include "types.h"
 #include <cstdlib>
 
-// CPU allocator.  On the GPU these would be replaced with cudaMalloc / cudaFree,
-// with each SoA array living in device-global memory for coalesced warp access.
+// CPU allocator; GPU backend replaces these with cudaMalloc / cudaFree.
 inline void* queue_alloc(size_t bytes) { return std::malloc(bytes); }
 inline void  queue_free(void* ptr)     { std::free(ptr); }
 
@@ -67,13 +66,12 @@ inline void free_ray_queue(RayQueue& q) {
 // Carries the full HitRecord plus the incoming ray state so Shade never needs
 // to reach back into the RayQueue.
 struct HitQueue {
-    // Intersection geometry
+    // Intersection geometry. `t` and `shape_id` are not consumed by shade,
+    // so they are not stored.
     float* point_x;   float* point_y;   float* point_z;
     float* normal_x;  float* normal_y;  float* normal_z;    // shading normal
     float* geo_nx;    float* geo_ny;    float* geo_nz;      // geometric normal
-    float* t;
     int*   material_id;
-    int*   shape_id;
     int*   front_face;  // stored as int (0 or 1) for alignment
     // Outgoing view direction wo = -ray.dir (in world space)
     float* wo_x;  float* wo_y;  float* wo_z;
@@ -94,10 +92,10 @@ inline HitQueue alloc_hit_queue(int cap) {
     size_t fb = size_t(cap) * sizeof(float);
     size_t ib = size_t(cap) * sizeof(int);
     size_t ub = size_t(cap) * sizeof(uint);
-    // 19 float arrays: point(3) + normal(3) + geo_normal(3) + t(1) + wo(3) + throughput(3) + radiance(3)
-    // 6  int  arrays:  material_id + shape_id + front_face + pixel_idx + depth + count_emission
+    // 18 float arrays: point(3) + normal(3) + geo_normal(3) + wo(3) + throughput(3) + radiance(3)
+    // 5  int  arrays:  material_id + front_face + pixel_idx + depth + count_emission
     // 1  uint array:   seed
-    char* p = (char*)queue_alloc(19*fb + 6*ib + ub);
+    char* p = (char*)queue_alloc(18*fb + 5*ib + ub);
     q.point_x      = (float*)p; p += fb;
     q.point_y      = (float*)p; p += fb;
     q.point_z      = (float*)p; p += fb;
@@ -107,7 +105,6 @@ inline HitQueue alloc_hit_queue(int cap) {
     q.geo_nx       = (float*)p; p += fb;
     q.geo_ny       = (float*)p; p += fb;
     q.geo_nz       = (float*)p; p += fb;
-    q.t            = (float*)p; p += fb;
     q.wo_x         = (float*)p; p += fb;
     q.wo_y         = (float*)p; p += fb;
     q.wo_z         = (float*)p; p += fb;
@@ -118,7 +115,6 @@ inline HitQueue alloc_hit_queue(int cap) {
     q.radiance_g   = (float*)p; p += fb;
     q.radiance_b   = (float*)p; p += fb;
     q.material_id   = (int*)p;  p += ib;
-    q.shape_id      = (int*)p;  p += ib;
     q.front_face    = (int*)p;  p += ib;
     q.pixel_idx     = (int*)p;  p += ib;
     q.depth         = (int*)p;  p += ib;
@@ -172,9 +168,19 @@ inline void free_miss_queue(MissQueue& q) {
     q = {};
 }
 
-// ── ShadowQueue (GPU only) ────────────────────────────────────────────────────
-// On the GPU, the shade kernel writes one entry per non-specular hit into a
-// ShadowQueue (origin, dir, tmax, contrib, pixel_idx).  A second GPU kernel
-// (or OptiX any-hit launch) then fires shadow rays for all entries at once and
-// adds unblocked contributions directly to the device frame buffer.
-// The CPU path tests shadow rays inline inside sample_direct_lighting().
+// ── ShadowQueue ───────────────────────────────────────────────────────────────
+// Written by the shade kernel (one entry per non-specular diffuse hit).
+// When OptiX is active, consumed by the shadow raygen pass: each entry fires
+// an any-hit ray; if unblocked, the shadow miss program adds `contrib` to the
+// image buffer directly. Using OptiX for shadow rays keeps the software BVH
+// completely out of the hot path.
+struct ShadowQueue {
+    float* origin_x; float* origin_y; float* origin_z;
+    float* dir_x;    float* dir_y;    float* dir_z;
+    float* tmax_arr;
+    float* contrib_r; float* contrib_g; float* contrib_b;  // tp × NEE contribution
+    int*   pixel_idx;
+    int    count;
+    int    capacity;
+};
+
