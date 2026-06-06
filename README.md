@@ -41,9 +41,22 @@ After performing the path tracing, the output image will be saved to the `output
 The path tracing can also be run automatically for multiple scenes using the `benchmark.py` script, collecting performance information as well.
 
 ```bash
-python benchmark.py [--gpu-only] [--cpu-only] [--scenes a,b,c] \
-                    [--gpu-res WxH] [--cpu-res WxH] [--spp N]
+python benchmark.py [--gpu-only] [--cpu-only] \
+                    [--optix] [--both-gpu] [--wavefront] \
+                    [--scenes a,b,c] [--gpu-res WxH] [--cpu-res WxH] [--spp N]
 ```
+
+| Flag | Effect |
+|---|---|
+| *(default)* | GPU CUDA BVH + CPU recursive |
+| `--optix` | GPU OptiX backend instead of CUDA BVH |
+| `--both-gpu` | Run both GPU backends (CUDA BVH and OptiX) side-by-side |
+| `--wavefront` | CPU wavefront renderer instead of recursive |
+| `--gpu-only` / `--cpu-only` | Skip the other platform |
+| `--scenes a,b` | Comma-separated subset of scenes |
+| `--gpu-res WxH` | Override GPU resolution (default: 3840×2160) |
+| `--cpu-res WxH` | Override CPU resolution (default: 1280×720) |
+| `--spp N` | Override samples-per-pixel for all runs |
 
 Furthermore, profiling details were collected using:
 

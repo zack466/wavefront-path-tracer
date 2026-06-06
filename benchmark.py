@@ -7,10 +7,19 @@ prints a performance table with Mrays/s and wall-clock time for each scene.
 
 Usage examples
 --------------
-  # Full benchmark: GPU at 4K, CPU at 720p (default)
+  # Full benchmark: GPU CUDA BVH at 4K, CPU recursive at 720p (default)
   python benchmark.py
 
-  # GPU only (e.g. on a laptop without a discrete GPU flag for CPU)
+  # GPU OptiX backend instead of CUDA BVH
+  python benchmark.py --optix
+
+  # Both GPU backends side-by-side
+  python benchmark.py --both-gpu
+
+  # CPU wavefront instead of recursive
+  python benchmark.py --wavefront
+
+  # GPU only
   python benchmark.py --gpu-only
 
   # CPU only
@@ -97,6 +106,17 @@ def run_one(binary, scene_json, width, height, spp_override, extra_args=()):
 
     return secs, mrays, result.stdout
 
+# ── Table helpers ──────────────────────────────────────────────────────────────
+
+def fmt_mrays(val):
+    return f"{val:>11.1f}" if val is not None else f"{'—':>11}"
+
+def fmt_time(val):
+    return f"{val:>7.1f}s" if val is not None else f"{'—':>8}"
+
+def fmt_ratio(a, b):
+    return f"{a/b:>7.0f}x" if (a is not None and b is not None) else f"{'—':>7}"
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -107,6 +127,12 @@ def main():
     )
     ap.add_argument("--gpu-only",  action="store_true", help="Run GPU benchmarks only")
     ap.add_argument("--cpu-only",  action="store_true", help="Run CPU benchmarks only")
+    ap.add_argument("--optix",     action="store_true",
+                    help="Use OptiX RT-core backend for GPU (default: CUDA BVH)")
+    ap.add_argument("--both-gpu",  action="store_true",
+                    help="Run both GPU backends (CUDA BVH and OptiX) and show both columns")
+    ap.add_argument("--wavefront", action="store_true",
+                    help="Use CPU wavefront renderer instead of recursive")
     ap.add_argument("--scenes",    default=",".join(ALL_SCENES),
                     help=f"Comma-separated scene names (default: {','.join(ALL_SCENES)})")
     ap.add_argument("--gpu-res",   default="x".join(map(str, DEFAULT_GPU_RES)),
@@ -117,9 +143,10 @@ def main():
                     help="Override spp for all runs (0 = use scene default)")
     ap.add_argument("--build-dir", default="build",
                     help="Path to CMake build directory (default: build)")
-    ap.add_argument("--wavefront", action="store_true",
-                    help="Use CPU wavefront renderer instead of recursive")
     args = ap.parse_args()
+
+    if args.optix and args.both_gpu:
+        ap.error("--optix and --both-gpu are mutually exclusive")
 
     project_root = Path(__file__).parent
     build_dir    = project_root / args.build_dir
@@ -131,8 +158,6 @@ def main():
     run_gpu = not args.cpu_only
     run_cpu = not args.gpu_only
 
-    gpu_extra = []
-
     if run_gpu and not gpu_bin.exists():
         print(f"GPU binary not found: {gpu_bin}", file=sys.stderr)
         print("Build with ENABLE_CUDA=ON or pass --cpu-only", file=sys.stderr)
@@ -141,7 +166,7 @@ def main():
         print(f"CPU binary not found: {cpu_bin}", file=sys.stderr)
         sys.exit(1)
 
-    scenes    = [s.strip() for s in args.scenes.split(",") if s.strip()]
+    scenes       = [s.strip() for s in args.scenes.split(",") if s.strip()]
     gpu_w, gpu_h = parse_res_str(args.gpu_res)
     cpu_w, cpu_h = parse_res_str(args.cpu_res)
     spp_override = args.spp or 0
@@ -156,13 +181,19 @@ def main():
     cpu_extra = ["--wavefront"] if args.wavefront else []
     cpu_label = "CPU wavefront" if args.wavefront else "CPU recursive"
 
+    # Decide which GPU backends to run
+    run_cuda  = run_gpu and (not args.optix)   # default or both-gpu
+    run_optix = run_gpu and (args.optix or args.both_gpu)
+
     # ── Print header ──────────────────────────────────────────────────────────
 
     print()
     print("Path Tracer Benchmark")
     print("=" * 60)
-    if run_gpu:
-        print(f"  GPU resolution : {gpu_w}×{gpu_h}  (OptiX RT cores)")
+    if run_cuda:
+        print(f"  GPU CUDA BVH   : {gpu_w}×{gpu_h}")
+    if run_optix:
+        print(f"  GPU OptiX      : {gpu_w}×{gpu_h}")
     if run_cpu:
         print(f"  CPU resolution : {cpu_w}×{cpu_h}  ({cpu_label})")
     if spp_override:
@@ -171,29 +202,37 @@ def main():
     print()
 
     # ── Collect results ───────────────────────────────────────────────────────
+    # results[scene] = { "cuda": (secs, mrays), "optix": ..., "cpu": ... }
 
-    results = {}   # scene -> {gpu: (secs, mrays), cpu: (secs, mrays)}
-
+    results = {name: {} for name in scenes}
     total_start = time.monotonic()
 
     for name in scenes:
         scene_json = scenes_dir / f"{name}.json"
-        results[name] = {}
 
-        if run_gpu:
-            print(f"  GPU  {name} @ {gpu_w}×{gpu_h} ... ", end="", flush=True)
-            secs, mrays, out = run_one(gpu_bin, scene_json, gpu_w, gpu_h, spp_override,
-                                       extra_args=gpu_extra)
+        if run_cuda:
+            print(f"  CUDA  {name} @ {gpu_w}×{gpu_h} ... ", end="", flush=True)
+            secs, mrays, _ = run_one(gpu_bin, scene_json, gpu_w, gpu_h, spp_override)
             if secs is not None:
                 print(f"{secs:7.1f} s  {mrays:7.1f} Mrays/s")
-                results[name]["gpu"] = (secs, mrays)
+                results[name]["cuda"] = (secs, mrays)
+            else:
+                print("FAILED")
+
+        if run_optix:
+            print(f"  OptiX {name} @ {gpu_w}×{gpu_h} ... ", end="", flush=True)
+            secs, mrays, _ = run_one(gpu_bin, scene_json, gpu_w, gpu_h, spp_override,
+                                     extra_args=["--optix"])
+            if secs is not None:
+                print(f"{secs:7.1f} s  {mrays:7.1f} Mrays/s")
+                results[name]["optix"] = (secs, mrays)
             else:
                 print("FAILED")
 
         if run_cpu:
-            print(f"  CPU  {name} @ {cpu_w}×{cpu_h} ... ", end="", flush=True)
-            secs, mrays, out = run_one(cpu_bin, scene_json, cpu_w, cpu_h, spp_override,
-                                       extra_args=cpu_extra)
+            print(f"  CPU   {name} @ {cpu_w}×{cpu_h} ... ", end="", flush=True)
+            secs, mrays, _ = run_one(cpu_bin, scene_json, cpu_w, cpu_h, spp_override,
+                                     extra_args=cpu_extra)
             if secs is not None:
                 print(f"{secs:7.1f} s  {mrays:7.1f} Mrays/s")
                 results[name]["cpu"] = (secs, mrays)
@@ -210,44 +249,46 @@ def main():
     print("=" * 60)
     print()
 
+    col = 14  # scene column width
+
+    # Build column list dynamically based on what was run
+    cols = []
+    if run_cuda:
+        cols.append(("CUDA Mrays/s", "CUDA time", "cuda"))
+    if run_optix:
+        cols.append(("OptiX Mrays/s", "OptiX time", "optix"))
+    if run_cpu:
+        cols.append((f"{cpu_label[:11]} Mrays/s", f"{cpu_label[:4]} time", "cpu"))
+
     # Header
-    col_scene = 14
-    if run_gpu and run_cpu:
-        header = (f"{'Scene':<{col_scene}}  "
-                  f"{'GPU Mrays/s':>11}  {'GPU time':>8}  "
-                  f"{'CPU Mrays/s':>11}  {'CPU time':>8}  "
-                  f"{'GPU/CPU':>7}")
-        sep = "-" * len(header)
-        print(header)
-        print(sep)
-        for name in scenes:
-            r = results[name]
-            gpu = r.get("gpu")
-            cpu = r.get("cpu")
-            gpu_m = f"{gpu[1]:>11.1f}" if gpu else f"{'—':>11}"
-            gpu_t = f"{gpu[0]:>7.1f}s"  if gpu else f"{'—':>8}"
-            cpu_m = f"{cpu[1]:>11.1f}" if cpu else f"{'—':>11}"
-            cpu_t = f"{cpu[0]:>7.1f}s"  if cpu else f"{'—':>8}"
-            ratio = f"{gpu[1]/cpu[1]:>7.0f}x" if (gpu and cpu) else f"{'—':>7}"
-            print(f"{name:<{col_scene}}  {gpu_m}  {gpu_t}  {cpu_m}  {cpu_t}  {ratio}")
-    elif run_gpu:
-        header = f"{'Scene':<{col_scene}}  {'GPU Mrays/s':>11}  {'GPU time':>8}"
-        print(header)
-        print("-" * len(header))
-        for name in scenes:
-            gpu = results[name].get("gpu")
-            gpu_m = f"{gpu[1]:>11.1f}" if gpu else f"{'—':>11}"
-            gpu_t = f"{gpu[0]:>7.1f}s"  if gpu else f"{'—':>8}"
-            print(f"{name:<{col_scene}}  {gpu_m}  {gpu_t}")
-    else:
-        header = f"{'Scene':<{col_scene}}  {'CPU Mrays/s':>11}  {'CPU time':>8}"
-        print(header)
-        print("-" * len(header))
-        for name in scenes:
-            cpu = results[name].get("cpu")
-            cpu_m = f"{cpu[1]:>11.1f}" if cpu else f"{'—':>11}"
-            cpu_t = f"{cpu[0]:>7.1f}s"  if cpu else f"{'—':>8}"
-            print(f"{name:<{col_scene}}  {cpu_m}  {cpu_t}")
+    header = f"{'Scene':<{col}}"
+    for mrays_label, time_label, _ in cols:
+        header += f"  {mrays_label:>13}  {time_label:>9}"
+    # Ratio column: last GPU vs CPU, or CUDA vs OptiX if both-gpu
+    if run_cuda and run_optix and not run_cpu:
+        header += f"  {'OptiX/CUDA':>10}"
+    elif run_gpu and run_cpu:
+        header += f"  {'GPU/CPU':>7}"
+    print(header)
+    print("-" * len(header))
+
+    for name in scenes:
+        r = results[name]
+        row = f"{name:<{col}}"
+        for _, _, key in cols:
+            entry = r.get(key)
+            row += f"  {fmt_mrays(entry[1] if entry else None)}  {fmt_time(entry[0] if entry else None)}"
+        # Ratio
+        if run_cuda and run_optix and not run_cpu:
+            cuda_m  = r["cuda"][1]  if "cuda"  in r else None
+            optix_m = r["optix"][1] if "optix" in r else None
+            row += f"  {fmt_ratio(optix_m, cuda_m):>10}"
+        elif run_gpu and run_cpu:
+            gpu_key = "optix" if (run_optix and not run_cuda) else "cuda"
+            gpu_m = r[gpu_key][1] if gpu_key in r else None
+            cpu_m = r["cpu"][1]   if "cpu"   in r else None
+            row += f"  {fmt_ratio(gpu_m, cpu_m)}"
+        print(row)
 
     print()
     print(f"Total wall-clock time: {total_elapsed/60:.1f} min")
